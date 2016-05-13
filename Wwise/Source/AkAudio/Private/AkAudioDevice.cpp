@@ -1614,6 +1614,11 @@ bool FAkAudioDevice::EnsureInitialized()
 	deviceSettings.uSchedulerTypeFlags = AK_SCHEDULER_DEFERRED_LINED_UP;
 	deviceSettings.uMaxConcurrentIO = AK_UNREAL_MAX_CONCURRENT_IO;
 
+#if defined AK_LINUX
+	// Increase stack size for avoid crash on AkUnrealIOHookDeferred on Editor Debug build
+	deviceSettings.threadProperties.uStackSize = 64 * 1024;
+#endif
+
 	if ( g_lowLevelIO.Init( deviceSettings, true ) != AK_Success )
 	{
         return false;
@@ -1623,6 +1628,11 @@ bool FAkAudioDevice::EnsureInitialized()
 	AkPlatformInitSettings platformInitSettings;
 	AK::SoundEngine::GetDefaultInitSettings( initSettings );
 	AK::SoundEngine::GetDefaultPlatformInitSettings( platformInitSettings );
+
+#if defined AK_LINUX
+	// Increase stack size for avoid crash on AkUnrealIOHookDeferred on Editor Debug build
+	platformInitSettings.threadBankManager.uStackSize = 64 * 1024;
+#endif
 
 #if defined AK_WIN
 	// Make the sound to not be audible when the game is minimized.
