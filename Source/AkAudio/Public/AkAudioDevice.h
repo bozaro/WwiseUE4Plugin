@@ -13,6 +13,7 @@
 #include "Engine.h"
 
 #include "AkInclude.h"
+#include "AkAudioBank.h"
 #include "AkBankManager.h"
 #include "SoundDefinitions.h"
 
@@ -164,12 +165,11 @@ public:
 	 * @return Result from ak sound engine 
 	 */
 	AKRESULT LoadBank(
-        class UAkAudioBank *      in_Bank,
-		AkBankCallbackFunc  in_pfnBankCallback,
-		void *              in_pCookie,
-        AkMemPoolId         in_memPoolId,
+		class UAkAudioBank *      in_Bank,
+		FAkAudioBankDelegate CompleteHandle,
+		AkMemPoolId         in_memPoolId,
 		AkBankID &          out_bankID
-        );
+	);
 		
 	/**
 	 * Unload a soundbank
@@ -200,14 +200,12 @@ public:
 	 *
 	 * @param in_Bank			The bank to unload
 	 * @param in_pfnBankCallback Callback function
-	 * @param in_pCookie		Callback cookie (reserved to user, passed to the callback function)
 	 * @return Result from ak sound engine 
 	 */
 	AKRESULT UnloadBank(
-        class UAkAudioBank *      in_Bank,
-		AkBankCallbackFunc  in_pfnBankCallback,
-		void *              in_pCookie
-        );
+		class UAkAudioBank *      in_Bank,
+		FAkAudioBankDelegate CompleteHandle
+	);
 
 	/**
 	 * Load the audiokinetic 'init' bank

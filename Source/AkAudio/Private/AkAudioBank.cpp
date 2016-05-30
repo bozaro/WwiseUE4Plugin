@@ -35,10 +35,7 @@ void UAkAudioBank::PostLoad()
  */
 void UAkAudioBank::BeginDestroy()
 {
-	if( AutoLoad )
-	{
-		Unload();
-	}
+	Unload();
 	Super::BeginDestroy();
 }
 
@@ -70,7 +67,7 @@ bool UAkAudioBank::Load()
  * @param in_pCookie				Cookie to pass in callback
  * @return Returns true if the laod was successful, otherwise false
  */
-bool UAkAudioBank::LoadAsync(void* in_pfnBankCallback, void* in_pCookie)
+bool UAkAudioBank::LoadAsync(FAkAudioBankDelegate CompleteHandle)
 {
 	if( !IsRunningCommandlet() )
 	{
@@ -78,7 +75,7 @@ bool UAkAudioBank::LoadAsync(void* in_pfnBankCallback, void* in_pCookie)
 		if( AudioDevice )
 		{
 			AkBankID BankID;
-			AKRESULT eResult = AudioDevice->LoadBank( this, (AkBankCallbackFunc)in_pfnBankCallback, in_pCookie, AK_DEFAULT_POOL_ID, BankID );
+			AKRESULT eResult = AudioDevice->LoadBank(this, CompleteHandle, AK_DEFAULT_POOL_ID, BankID);
 			return (eResult == AK_Success) ? true : false;
 		}
 	}
@@ -107,7 +104,7 @@ void UAkAudioBank::Unload()
  * @param in_pfnBankCallback		Function to call on completion
  * @param in_pCookie				Cookie to pass in callback
  */
-void UAkAudioBank::UnloadAsync(void* in_pfnBankCallback, void* in_pCookie)
+void UAkAudioBank::UnloadAsync(FAkAudioBankDelegate CompleteHandle)
 {
 	if( !IsRunningCommandlet() )
 	{
@@ -115,7 +112,7 @@ void UAkAudioBank::UnloadAsync(void* in_pfnBankCallback, void* in_pCookie)
 		FAkAudioDevice * AudioDevice = FAkAudioDevice::Get();
 		if( AudioDevice )
 		{
-			eResult = AudioDevice->UnloadBank( this, (AkBankCallbackFunc)in_pfnBankCallback, in_pCookie );
+			eResult = AudioDevice->UnloadBank(this, CompleteHandle);
 		}
 	}
 }

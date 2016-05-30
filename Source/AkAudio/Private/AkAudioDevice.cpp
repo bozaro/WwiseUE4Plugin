@@ -20,6 +20,10 @@
 
 #include <AK/Plugin/AllPluginsRegistrationHelpers.h>
 
+#if WITH_EDITOR
+	#include "Editor.h"
+#endif
+
 #if PLATFORM_XBOXONE
 	#include <apu.h>
 #endif
@@ -179,6 +183,10 @@ bool FAkAudioDevice::Update( float DeltaTime )
 	{
 		AK::SoundEngine::RenderAudio();
 		UpdateListeners();
+		if (AkBankManager)
+		{
+			AkBankManager->Update();
+		}
 	}
 
 	return true;
@@ -196,14 +204,10 @@ void FAkAudioDevice::Teardown()
 		// Unload all loaded banks before teardown
 		if( AkBankManager )
 		{
-			const TSet<UAkAudioBank*>* LoadedBanks = AkBankManager->GetLoadedBankList();
-			TSet<UAkAudioBank*> LoadedBanksCopy(*LoadedBanks);
-			for(TSet<UAkAudioBank*>::TConstIterator LoadIter(LoadedBanksCopy); LoadIter; ++LoadIter)
+			TSet<FString> LoadedBanksCopy(AkBankManager->GetLoadedBankList());
+			for(const FString& BankName : LoadedBanksCopy)
 			{
-				if( (*LoadIter) != NULL && (*LoadIter)->IsValidLowLevel() )
-				{
-					(*LoadIter)->Unload();
-				}
+				AkBankManager->ForceUnloadBank(BankName, nullptr);
 			}
 			delete AkBankManager;
 		}
@@ -377,9 +381,9 @@ AKRESULT FAkAudioDevice::ClearBanks()
 	{
 		AKRESULT eResult = AK::SoundEngine::ClearBanks();
 		if( eResult == AK_Success && AkBankManager != NULL )
-			{
-				FScopeLock Lock(&AkBankManager->m_BankManagerCriticalSection);
-				AkBankManager->ClearLoadedBanks();
+		{
+			FScopeLock Lock(&AkBankManager->m_BankManagerCriticalSection);
+			AkBankManager->ClearLoadedBanks();
 		}
 
 		return eResult;
@@ -404,13 +408,7 @@ AKRESULT FAkAudioDevice::LoadBank(
 	AkBankID &          out_bankID
 	)
 {
-	AKRESULT eResult = LoadBank(in_Bank->GetName(), in_memPoolId, out_bankID);
-	if( eResult == AK_Success && AkBankManager != NULL)
-	{
-		FScopeLock Lock(&AkBankManager->m_BankManagerCriticalSection);
-		AkBankManager->AddLoadedBank(in_Bank);
-	}
-	return eResult;
+	return AkBankManager->LoadBank(in_Bank->GetName(), in_memPoolId, out_bankID);
 }
 
 /**
@@ -428,56 +426,11 @@ AKRESULT FAkAudioDevice::LoadBank(
 	)
 {
 	AKRESULT eResult = AK_Fail;
-	if( EnsureInitialized() ) // ensure audiolib is initialized
+	if (EnsureInitialized() && ensure(AkBankManager))
 	{
-#ifndef AK_SUPPORT_WCHAR
-		ANSICHAR* szString = TCHAR_TO_ANSI(*in_BankName);
-#else
-		const WIDECHAR * szString = *in_BankName;
-#endif		
-		eResult = AK::SoundEngine::LoadBank( szString, in_memPoolId, out_bankID );
+		eResult = AkBankManager->LoadBank(in_BankName, in_memPoolId, out_bankID);
 	}
 	return eResult;
-}
-
-static void AkAudioDeviceBankLoadCallback(	
-	AkUInt32		in_bankID,
-	const void *	in_pInMemoryBankPtr,
-	AKRESULT		in_eLoadResult,
-	AkMemPoolId		in_memPoolId,
-	void *			in_pCookie
-)
-{
-	FAkAudioDevice * akAudioDevice = FAkAudioDevice::Get();
-	AkBankCallbackFunc cbFunc = NULL;
-	if( akAudioDevice )
-	{
-		FAkBankManager * BankManager = akAudioDevice->GetAkBankManager();
-		if( BankManager != NULL )
-		{
-			FScopeLock Lock(&BankManager->m_BankManagerCriticalSection);
-
-			FAkBankManager::AkBankCallbackInfo * cbInfo = BankManager->GetBankLoadCallbackInfo(in_pCookie);
-			if( cbInfo != NULL )
-			{
-				cbFunc = cbInfo->CallbackFunc;
-			}
-
-			if( in_eLoadResult == AK_Success )
-			{
-				// Load worked; put the bank in the list.
-				BankManager->AddLoadedBank(cbInfo->pBank);
-			}
-
-			BankManager->RemoveBankLoadCallbackInfo(in_pCookie);
-		}
-	}
-
-	if( cbFunc != NULL )
-	{
-		// Call the user's callback function
-		cbFunc(in_bankID, in_pInMemoryBankPtr, in_eLoadResult, in_memPoolId, in_pCookie);
-	}
 }
 
 /**
@@ -492,44 +445,17 @@ static void AkAudioDeviceBankLoadCallback(
  */
 AKRESULT FAkAudioDevice::LoadBank(
 	class UAkAudioBank *     in_Bank,
-	AkBankCallbackFunc  in_pfnBankCallback,
-	void *              in_pCookie,
-    AkMemPoolId         in_memPoolId,
+	FAkAudioBankDelegate CompleteHandle,
+	AkMemPoolId         in_memPoolId,
 	AkBankID &          out_bankID
     )
 {
-	if( EnsureInitialized() ) // ensure audiolib is initialized
+	AKRESULT eResult = AK_Fail;
+	if (EnsureInitialized() && ensure(AkBankManager))
 	{
-		FString name = in_Bank->GetName();
-#ifndef AK_SUPPORT_WCHAR
-		ANSICHAR* szString = TCHAR_TO_ANSI(*name);
-#else
-		const WIDECHAR * szString = *name;
-#endif
-
-		if( AkBankManager != NULL )
-		{
-			FAkBankManager::AkBankCallbackInfo cbInfo(in_pfnBankCallback, in_Bank);
-
-			// We need a unique cookie for the map. If none, use the bank as cookie
-			if( in_pCookie == NULL )
-			{
-				in_pCookie = in_Bank;
-			}
-
-			// Need to hijack the callback, so we can add the bank to the loaded banks list when successful.
-			AkBankManager->m_BankManagerCriticalSection.Lock();
-			AkBankManager->AddBankLoadCallbackInfo(in_pCookie, cbInfo);
-			AkBankManager->m_BankManagerCriticalSection.Unlock();
-
-			return AK::SoundEngine::LoadBank( szString, AkAudioDeviceBankLoadCallback, in_pCookie, in_memPoolId, out_bankID );
-		}
-		else
-		{
-			return AK::SoundEngine::LoadBank( szString, in_pfnBankCallback, in_pCookie, in_memPoolId, out_bankID );
-		}
+		eResult = AkBankManager->LoadBankAsync(in_Bank->GetName(), CompleteHandle, in_memPoolId, out_bankID);
 	}
-	return AK_Fail;
+	return eResult;
 }
 
 /**
@@ -544,13 +470,7 @@ AKRESULT FAkAudioDevice::UnloadBank(
     AkMemPoolId *       out_pMemPoolId		    ///< Returned memory pool ID used with LoadBank() (can pass NULL)
     )
 {
-	AKRESULT eResult = UnloadBank(in_Bank->GetName(), out_pMemPoolId);
-	if( eResult == AK_Success && AkBankManager != NULL)
-	{
-		FScopeLock Lock(&AkBankManager->m_BankManagerCriticalSection);
-		AkBankManager->RemoveLoadedBank(in_Bank);
-	}
-	return eResult;
+	return UnloadBank(in_Bank->GetName(), out_pMemPoolId);
 }
 
 /**
@@ -566,56 +486,11 @@ AKRESULT FAkAudioDevice::UnloadBank(
     )
 {
 	AKRESULT eResult = AK_Fail;
-	if ( m_bSoundEngineInitialized )
+	if (EnsureInitialized() && ensure(AkBankManager))
 	{
-#ifndef AK_SUPPORT_WCHAR
-		ANSICHAR* szString = TCHAR_TO_ANSI(*in_BankName);
-#else
-		const WIDECHAR * szString = *in_BankName;
-#endif
-		eResult = AK::SoundEngine::UnloadBank( szString, out_pMemPoolId );
+		eResult = AkBankManager->UnloadBank(in_BankName, out_pMemPoolId);
 	}
 	return eResult;
-}
-
-static void AkAudioDeviceBankUnloadCallback(	
-	AkUInt32		in_bankID,
-	const void *	in_pInMemoryBankPtr,
-	AKRESULT		in_eLoadResult,
-	AkMemPoolId		in_memPoolId,
-	void *			in_pCookie
-)
-{
-	FAkAudioDevice * akAudioDevice = FAkAudioDevice::Get();
-	AkBankCallbackFunc cbFunc = NULL;
-	if( akAudioDevice )
-	{
-		FAkBankManager * BankManager = akAudioDevice->GetAkBankManager();
-		if( BankManager )
-		{
-			FScopeLock Lock(&BankManager->m_BankManagerCriticalSection);
-			FAkBankManager::AkBankCallbackInfo * cbInfo = BankManager->GetBankUnloadCallbackInfo(in_pCookie);
-			if( cbInfo != NULL )
-			{
-				cbFunc = cbInfo->CallbackFunc;
-			}
-
-			if( in_eLoadResult == AK_Success )
-			{
-				// Load worked; put the bank in the list.
-				BankManager->RemoveLoadedBank(cbInfo->pBank);
-			}
-
-			BankManager->RemoveBankUnloadCallbackInfo(in_pCookie);
-		}
-	}
-
-	if( cbFunc != NULL )
-	{
-		// Call the user's callback function
-		cbFunc(in_bankID, in_pInMemoryBankPtr, in_eLoadResult, in_memPoolId, in_pCookie);
-	}
-	
 }
 
 /**
@@ -627,42 +502,16 @@ static void AkAudioDeviceBankUnloadCallback(
  * @return Result from ak sound engine 
  */
 AKRESULT FAkAudioDevice::UnloadBank(
-	class UAkAudioBank *     in_Bank,
-	AkBankCallbackFunc  in_pfnBankCallback,
-	void *              in_pCookie
+	class UAkAudioBank* in_Bank,
+	FAkAudioBankDelegate CompleteHandle
     )
 {
-	if ( m_bSoundEngineInitialized )
+	AKRESULT eResult = AK_Fail;
+	if (m_bSoundEngineInitialized && ensure(AkBankManager))
 	{
-		FString name = in_Bank->GetName();
-#ifndef AK_SUPPORT_WCHAR
-		ANSICHAR* szString = TCHAR_TO_ANSI(*name);
-#else
-		const WIDECHAR * szString = *name;
-#endif
-		if( AkBankManager != NULL )
-		{
-			FAkBankManager::AkBankCallbackInfo cbInfo(in_pfnBankCallback, in_Bank);
-
-			// We need a unique cookie for the map. If none, use the bank as cookie
-			if( in_pCookie == NULL )
-			{
-				in_pCookie = in_Bank;
-			}
-
-			// Need to hijack the callback, so we can add the bank to the loaded banks list when successful.
-			AkBankManager->m_BankManagerCriticalSection.Lock();
-			AkBankManager->AddBankUnloadCallbackInfo(in_pCookie, cbInfo);
-			AkBankManager->m_BankManagerCriticalSection.Unlock();
-
-			return AK::SoundEngine::UnloadBank(szString, NULL, AkAudioDeviceBankUnloadCallback, in_pCookie);
-		}
-		else
-		{
-			return AK::SoundEngine::UnloadBank(szString, NULL, in_pfnBankCallback, in_pCookie);
-		}
+		eResult = AkBankManager->UnloadBankAsync(in_Bank->GetName(), CompleteHandle);
 	}
-	return AK_Fail;
+	return eResult;
 }
 
 /**

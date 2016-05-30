@@ -11,6 +11,7 @@
 ------------------------------------------------------------------------------------*/
 
 #include "Engine.h"
+#include "ContentStreaming.h"
 
 #include "AkInclude.h"
 #include "SoundDefinitions.h"
@@ -23,74 +24,81 @@ class AKAUDIO_API FAkBankManager
 public:
 	struct AkBankCallbackInfo
 	{
-		AkBankCallbackFunc	CallbackFunc;
-		class UAkAudioBank *		pBank;
+		FAkAudioBankDelegate CallbackFunc;
+		FString              BankName;
 
-		AkBankCallbackInfo(AkBankCallbackFunc cbFunc, class UAkAudioBank * bank)
-			: CallbackFunc(cbFunc)
-			, pBank(bank)
+		AkBankCallbackInfo()
+		{}
+
+		AkBankCallbackInfo(const FAkAudioBankDelegate& InCallbackFunc, const FString& InBankName)
+			: CallbackFunc(InCallbackFunc)
+			, BankName(InBankName)
 		{}
 	};
 
-	void AddBankLoadCallbackInfo(void * in_pCookie, AkBankCallbackInfo& in_CallbackInfo)
-	{
-		m_BankLoadCallbackMap.Add(in_pCookie, in_CallbackInfo);
-	}
+	AKRESULT LoadBank(
+		const FString& in_BankName,
+		AkMemPoolId    in_memPoolId,
+		AkBankID&      out_bankID
+	);
 
-	AkBankCallbackInfo * GetBankLoadCallbackInfo(void * in_pCookie)
-	{
-		return m_BankLoadCallbackMap.Find(in_pCookie);
-	}
+	AKRESULT UnloadBank(
+		const FString& in_BankName,
+		AkMemPoolId*   out_pMemPoolId = NULL
+	);
 
-	void RemoveBankLoadCallbackInfo(void * in_pCookie)
-	{
-		m_BankLoadCallbackMap.Remove(in_pCookie);
-	}
+	AKRESULT LoadBankAsync(
+		const FString&       in_BankName,
+		FAkAudioBankDelegate in_Handle,
+		AkMemPoolId          in_memPoolId,
+		AkBankID&            out_bankID
+		);
 
-	void AddBankUnloadCallbackInfo(void * in_pCookie, AkBankCallbackInfo& in_CallbackInfo)
-	{
-		m_BankUnloadCallbackMap.Add(in_pCookie, in_CallbackInfo);
-	}
+	AKRESULT UnloadBankAsync(
+		const FString&       in_BankName,
+		FAkAudioBankDelegate in_Handle
+	);
 
-	AkBankCallbackInfo * GetBankUnloadCallbackInfo(void * in_pCookie)
-	{
-		return m_BankUnloadCallbackMap.Find(in_pCookie);
-	}
-
-	void RemoveBankUnloadCallbackInfo(void * in_pCookie)
-	{
-		m_BankUnloadCallbackMap.Remove(in_pCookie);
-	}
-
-	void AddLoadedBank(class UAkAudioBank * Bank)
-	{
-		bool bIsAlreadyInSet = false;
-		m_LoadedBanks.Add(Bank, &bIsAlreadyInSet);
-		check(bIsAlreadyInSet == false);
-	}
-
-	void RemoveLoadedBank(class UAkAudioBank * Bank)
-	{
-		m_LoadedBanks.Remove(Bank);
-	}
+	AKRESULT ForceUnloadBank(
+		const FString& in_BankName,
+		AkMemPoolId*   out_pMemPoolId = NULL
+	);
 
 	void ClearLoadedBanks()
 	{
 		m_LoadedBanks.Empty();
 	}
 
-	const TSet<class UAkAudioBank *>* GetLoadedBankList()
+	void Update();
+
+	const TSet<FString>& GetLoadedBankList() const
 	{
-		return &m_LoadedBanks;
+		return m_LoadedBanks;
 	}
 
 	FCriticalSection m_BankManagerCriticalSection;
 
 private:
+	static volatile size_t m_CallbackId;
 
-	TSet< class UAkAudioBank * > m_LoadedBanks;
+	TSet< FString > m_UnloadBanks;
+	TSet< FString > m_LoadedBanks;
 
-	TMap< void*, AkBankCallbackInfo > m_BankLoadCallbackMap;
-	TMap< void*, AkBankCallbackInfo > m_BankUnloadCallbackMap;
+	TMap< void*, AkBankCallbackInfo > m_BankCallbackMap;
 
+	static void BankLoadCallback(
+		AkUInt32		in_bankID,
+		const void *	in_pInMemoryBankPtr,
+		AKRESULT		in_eLoadResult,
+		AkMemPoolId		in_memPoolId,
+		void *			in_pCookie
+	);
+
+	static void BankUnloadCallback(
+		AkUInt32		in_bankID,
+		const void *	in_pInMemoryBankPtr,
+		AKRESULT		in_eLoadResult,
+		AkMemPoolId		in_memPoolId,
+		void *			in_pCookie
+	);
 };

@@ -360,9 +360,16 @@ void UAkGameplayStatics::LoadBanks(const TArray<UAkAudioBank *>& SoundBanks, boo
 {
 	if( SynchronizeSoundBanks )
 	{
-		TSet<UAkAudioBank*> BanksToUnload;
-		TSet<UAkAudioBank*> BanksToLoad;
-		TSet<UAkAudioBank*> InputBankSet(SoundBanks);
+		TSet<FString> BanksToUnload;
+		TSet<FString> BanksToLoad;
+		TSet<FString> InputBankSet;
+		for (UAkAudioBank *SoundBank : SoundBanks)
+		{
+			if (SoundBank)
+			{
+				InputBankSet.Add(SoundBank->GetName());
+			}
+		}
 		FAkAudioDevice * AkAudioDevice = FAkAudioDevice::Get();
 		if( AkAudioDevice )
 		{
@@ -370,47 +377,39 @@ void UAkGameplayStatics::LoadBanks(const TArray<UAkAudioBank *>& SoundBanks, boo
 			if( BankManager )
 			{
 				FScopeLock Lock(&BankManager->m_BankManagerCriticalSection);
-				const TSet<UAkAudioBank *>* LoadedBanks = BankManager->GetLoadedBankList();
+				const TSet<FString>& LoadedBanks = BankManager->GetLoadedBankList();
 
 				// We load what's in the input set, but not in the already loaded set
-				BanksToLoad = InputBankSet.Difference(*LoadedBanks);
+				BanksToLoad = InputBankSet.Difference(LoadedBanks);
 
 				// We unload what's in the loaded set but not in the input set
-				BanksToUnload = LoadedBanks->Difference(InputBankSet);
+				BanksToUnload = LoadedBanks.Difference(InputBankSet);
 			}
 			else
 			{
 				UE_LOG(LogScript, Warning, TEXT("UAkGameplayStatics::LoadBanks: Bank Manager unused, and CleanUpBanks set to true!"));
 			}
 		}
-		for(TSet<UAkAudioBank*>::TConstIterator LoadIter(BanksToLoad); LoadIter; ++LoadIter)
+		for (const FString& BankName : BanksToLoad)
 		{
-			if( *LoadIter != NULL )
-			{
-				(*LoadIter)->Load();
-			}
+			AkBankID BankID;
+			AkAudioDevice->LoadBank(BankName, AK_DEFAULT_POOL_ID, BankID);
 		}
-
-		for(TSet<UAkAudioBank*>::TConstIterator UnloadIter(BanksToUnload); UnloadIter; ++UnloadIter)
+		for (const FString& BankName : BanksToUnload)
 		{
-			if( *UnloadIter != NULL )
-			{
-				(*UnloadIter)->Unload();
-			}
+			AkAudioDevice->UnloadBank(BankName);
 		}
 	}
 	else
 	{
-		for(TArray<UAkAudioBank*>::TConstIterator LoadIter(SoundBanks); LoadIter; ++LoadIter)
+		for (TArray<UAkAudioBank*>::TConstIterator LoadIter(SoundBanks); LoadIter; ++LoadIter)
 		{
-			if( *LoadIter != NULL )
+			if (*LoadIter != NULL)
 			{
 				(*LoadIter)->Load();
 			}
 		}
 	}
-
-
 }
 
 void UAkGameplayStatics::LoadInitBank()

@@ -4,7 +4,10 @@
 	AkBank.h:
 =============================================================================*/
 #pragma once
+#include "AkInclude.h"
 #include "AkAudioBank.generated.h"
+
+DECLARE_DELEGATE_OneParam(FAkAudioBankDelegate, AKRESULT);
 
 /*------------------------------------------------------------------------------------
 	UAkAudioBank
@@ -73,11 +76,10 @@ public:
 	/**
 	 * Loads an AkBank asynchronously.
 	 *
-	 * @param in_pfnBankCallback		Function to call on completion
-	 * @param in_pCookie				Cookie to pass in callback
+	 * @param CompleteHandle Callback delegate
 	 * @return Returns true if the laod was successful, otherwise false
 	 */
-	bool LoadAsync(void* in_pfnBankCallback, void* in_pCookie);
+	bool LoadAsync(FAkAudioBankDelegate CompleteHandle);
 	
 	/**
 	 * Unloads an AkBank.
@@ -87,9 +89,8 @@ public:
 	/**
 	 * Unloads an AkBank asynchronously.
 	 *
-	 * @param in_pfnBankCallback		Function to call on completion
-	 * @param in_pCookie				Cookie to pass in callback
+	 * @param CompleteHandle Callback delegate
 	 */
-	void UnloadAsync(void* in_pfnBankCallback, void* in_pCookie);
+	void UnloadAsync(FAkAudioBankDelegate CompleteHandle);
 #endif
 };
